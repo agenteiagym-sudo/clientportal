@@ -1,0 +1,5 @@
+{
+  "name": "Gym Client Portal",
+  "description": "A portal for gym clients to track progress, view weekly menus, manage appointments, and check payment status.",
+  "requestFramePermissions": []
+}
