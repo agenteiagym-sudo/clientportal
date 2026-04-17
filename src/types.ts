@@ -1,15 +1,17 @@
 export interface UserProfile {
   id: string;
-  full_name: string;
-  cedula: string;
-  phone?: string;
+  full_name: string; // Cifrado en el app
   email: string;
-  role: string;
+  cedula: string; // Cifrado en el app
+  phone?: string; // Cifrado en el app
+  role: 'admin' | 'client' | 'nutritionist' | 'manager';
   plan_name?: string;
-  plan_details?: string;
-  plan_price?: number;
-  avatar_url?: string;
+  plan_details?: string; // Cifrado en el app
+  plan_price?: string; // Cifrado en el app (antes era number)
+  membership_expires_at?: string;
   is_active: boolean;
+  stripe_customer_id?: string;
+  stripe_subscription_id?: string;
   created_at: string;
 }
 
@@ -24,29 +26,50 @@ export interface ProgressData {
   created_at: string;
 }
 
+export interface DailyMenu {
+  day: string;
+  breakfast: string;
+  lunch: string;
+  dinner: string;
+  snacks?: string;
+  preparation?: string;
+  image_url?: string;
+}
+
 export interface WeeklyMenu {
   id: string;
   user_id: string;
   content: string;
+  daily_menus?: DailyMenu[];
   is_approved: boolean;
+  banner_url?: string;
   created_at: string;
 }
 
 export interface Appointment {
   id: string;
   user_id: string;
-  title: string;
+  type: string;
   date: string;
   time: string;
-  status: 'scheduled' | 'completed' | 'cancelled';
+  status: 'pending' | 'confirmed' | 'cancelled' | 'postponed';
+  notes?: string; // Cifrado
+  created_at: string;
+}
+
+export interface SystemSettings {
+  id: string;
+  appointment_reasons: string[];
+  created_at: string;
 }
 
 export interface Exam {
   id: string;
   user_id: string;
-  file_url?: string;
+  file_url: string;
   file_name: string;
-  digitized_data?: string; // JSON string
+  date: string;
+  digitized_data?: string; // JSON cifrado
   created_at: string;
 }
 
@@ -81,12 +104,13 @@ export interface StripeSubscription {
   attrs: any;
 }
 
-export interface PaymentProof {
+export interface Payment {
   id: string;
   user_id: string;
-  file_url: string;
-  file_name: string;
-  status: 'pending' | 'approved' | 'rejected';
-  notes?: string;
+  amount: number;
+  method: string;
+  status: 'pending' | 'completed' | 'rejected';
+  notes?: string; // Cifrado
+  date: string;
   created_at: string;
 }

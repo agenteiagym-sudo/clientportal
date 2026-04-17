@@ -1,246 +1,34 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabase';
-import { UserProfile, ProgressData, WeeklyMenu, Appointment, Exam, TrainingLog, StripeInvoice, StripeSubscription, PaymentProof } from './types';
+import { supabase } from './lib/supabase';
+import { UserProfile, ProgressData, WeeklyMenu, Appointment, Exam, TrainingLog, StripeInvoice, StripeSubscription, Payment, DailyMenu, SystemSettings } from './types';
 import { GoogleGenAI, Type } from "@google/genai";
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line 
-} from 'recharts';
-import { 
   LayoutDashboard, Utensils, Calendar, CreditCard, LogOut, User, 
-  ChevronRight, TrendingUp, CheckCircle2, AlertCircle, Clock, Upload,
-  Users
+  ChevronRight, TrendingUp, AlertCircle, Users, Settings
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
+import { Toaster } from 'sonner';
+import { decryptData, encryptData } from './lib/encryption';
+import { robustJSONRepair } from './lib/jsonUtils';
 
 // --- Components ---
+import { NavItem } from './components/ui/NavItem';
+import { AppointmentModal } from './components/modals/AppointmentModal';
+import { ExamModal } from './components/modals/ExamModal';
+import { PaymentProofModal } from './components/modals/PaymentProofModal';
 
-const Card = ({ children, className, title }: { children: React.ReactNode, className?: string, title?: string, key?: string | number }) => (
-  <div className={cn("bg-white rounded-2xl p-6 shadow-sm border border-black/5", className)}>
-    {title && <h3 className="text-sm font-medium text-zinc-500 mb-4 uppercase tracking-wider">{title}</h3>}
-    {children}
-  </div>
-);
-
-const Stat = ({ label, value, icon: Icon, trend }: { label: string, value: string, icon: any, trend?: string }) => (
-  <Card className="flex items-start justify-between">
-    <div>
-      <p className="text-sm text-zinc-500 font-medium">{label}</p>
-      <h4 className="text-2xl font-semibold mt-1 text-zinc-900">{value}</h4>
-      {trend && <p className="text-xs text-emerald-600 font-medium mt-1 flex items-center gap-1">
-        <TrendingUp size={12} /> {trend}
-      </p>}
-    </div>
-    <div className="p-2 bg-zinc-50 rounded-lg text-zinc-400">
-      <Icon size={20} />
-    </div>
-  </Card>
-);
+// --- Views ---
+import { DashboardView } from './components/views/DashboardView';
+import { TrainingLogsView } from './components/views/TrainingLogsView';
+import { MenuView } from './components/views/MenuView';
+import { AppointmentsView } from './components/views/AppointmentsView';
+import { ExamsView } from './components/views/ExamsView';
+import { ClientsView } from './components/views/ClientsView';
+import { PaymentsView } from './components/views/PaymentsView';
+import { SettingsView } from './components/views/SettingsView';
 
 // --- Main App ---
-
-function AppointmentModal({ onClose, onSubmit }: { onClose: () => void, onSubmit: (t: string, d: string, tm: string) => void }) {
-  const [title, setTitle] = useState('');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl"
-      >
-        <h2 className="text-2xl font-bold mb-6">Agendar Cita</h2>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-zinc-700 mb-1">Título / Motivo</label>
-            <input 
-              type="text" 
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Ej: Control Nutricional"
-              className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-900 transition-all"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-1">Fecha</label>
-              <input 
-                type="date" 
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-900 transition-all"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-1">Hora</label>
-              <input 
-                type="time" 
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-900 transition-all"
-              />
-            </div>
-          </div>
-        </div>
-        <div className="flex gap-3 mt-8">
-          <button 
-            onClick={onClose}
-            className="flex-1 py-3 rounded-xl font-medium text-zinc-500 hover:bg-zinc-100 transition-all"
-          >
-            Cancelar
-          </button>
-          <button 
-            onClick={() => onSubmit(title, date, time)}
-            disabled={!title || !date || !time}
-            className="flex-1 py-3 rounded-xl font-medium bg-zinc-900 text-white hover:bg-zinc-800 transition-all disabled:opacity-50"
-          >
-            Confirmar
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-function ExamModal({ onClose, onSubmit }: { onClose: () => void, onSubmit: (file: File) => void }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-
-  const handleSubmit = async () => {
-    if (!file) return;
-    setIsProcessing(true);
-    try {
-      await onSubmit(file);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl"
-      >
-        <h2 className="text-2xl font-bold mb-2">Subir Examen</h2>
-        <p className="text-zinc-500 text-sm mb-6">Sube una imagen o PDF. La IA extraerá automáticamente el nombre y la fecha.</p>
-        
-        <div className="space-y-4">
-          <div className="border-2 border-dashed border-zinc-200 rounded-2xl p-8 text-center hover:border-zinc-900 transition-all cursor-pointer relative">
-            <input 
-              type="file" 
-              accept="image/*,application/pdf"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="absolute inset-0 opacity-0 cursor-pointer"
-              disabled={isProcessing}
-            />
-            <div className="flex flex-col items-center gap-2">
-              <Upload size={32} className="text-zinc-400" />
-              <p className="text-sm font-medium text-zinc-600">
-                {file ? file.name : "Selecciona o arrastra un archivo"}
-              </p>
-              <p className="text-xs text-zinc-400">JPG, PNG o PDF (Máx 5MB)</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex gap-3 mt-8">
-          <button 
-            onClick={onClose}
-            disabled={isProcessing}
-            className="flex-1 py-3 rounded-xl font-medium text-zinc-500 hover:bg-zinc-100 transition-all disabled:opacity-50"
-          >
-            Cancelar
-          </button>
-          <button 
-            onClick={handleSubmit}
-            disabled={!file || isProcessing}
-            className="flex-1 py-3 rounded-xl font-medium bg-zinc-900 text-white hover:bg-zinc-800 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {isProcessing ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Procesando...
-              </>
-            ) : "Subir y Analizar"}
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-function PaymentProofModal({ onClose, onSubmit }: { onClose: () => void, onSubmit: (file: File) => void }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-
-  const handleSubmit = async () => {
-    if (!file) return;
-    setIsUploading(true);
-    try {
-      await onSubmit(file);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl"
-      >
-        <h2 className="text-2xl font-bold mb-2">Enviar Comprobante</h2>
-        <p className="text-zinc-500 text-sm mb-6">Sube una captura de tu transferencia bancaria o Yappy.</p>
-        
-        <div className="space-y-4">
-          <div className="border-2 border-dashed border-zinc-200 rounded-2xl p-8 text-center hover:border-zinc-900 transition-all cursor-pointer relative">
-            <input 
-              type="file" 
-              accept="image/*,application/pdf"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="absolute inset-0 opacity-0 cursor-pointer"
-              disabled={isUploading}
-            />
-            <div className="flex flex-col items-center gap-2">
-              <Upload size={32} className="text-zinc-400" />
-              <p className="text-sm font-medium text-zinc-600">
-                {file ? file.name : "Selecciona el comprobante"}
-              </p>
-              <p className="text-xs text-zinc-400">JPG, PNG o PDF (Máx 5MB)</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex gap-3 mt-8">
-          <button 
-            onClick={onClose}
-            disabled={isUploading}
-            className="flex-1 py-3 rounded-xl font-medium text-zinc-500 hover:bg-zinc-100 transition-all disabled:opacity-50"
-          >
-            Cancelar
-          </button>
-          <button 
-            onClick={handleSubmit}
-            disabled={!file || isUploading}
-            className="flex-1 py-3 rounded-xl font-medium bg-zinc-900 text-white hover:bg-zinc-800 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {isUploading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Subiendo...
-              </>
-            ) : "Enviar Comprobante"}
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -252,12 +40,13 @@ export default function App() {
   const [trainingLogs, setTrainingLogs] = useState<TrainingLog[]>([]);
   const [stripeInvoices, setStripeInvoices] = useState<StripeInvoice[]>([]);
   const [stripeSubscriptions, setStripeSubscriptions] = useState<StripeSubscription[]>([]);
+  const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'menu' | 'appointments' | 'exams' | 'payments' | 'training' | 'clients'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'menu' | 'appointments' | 'exams' | 'payments' | 'training' | 'clients' | 'settings'>('dashboard');
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
   const [isExamModalOpen, setIsExamModalOpen] = useState(false);
-  const [isPaymentProofModalOpen, setIsPaymentProofModalOpen] = useState(false);
-  const [paymentProofs, setPaymentProofs] = useState<PaymentProof[]>([]);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [payments, setPayments] = useState<Payment[]>([]);
   
   // Login State
   const [email, setEmail] = useState('');
@@ -337,7 +126,7 @@ export default function App() {
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'payment_proofs', filter: `user_id=eq.${userId}` },
+        { event: '*', schema: 'public', table: 'payments', filter: `user_id=eq.${userId}` },
         () => fetchData(userId)
       )
       .subscribe();
@@ -358,85 +147,126 @@ export default function App() {
         .maybeSingle();
 
       if (profileError) throw profileError;
+      
+      // Decrypt Profile Fields
+      if (profileData) {
+        const decrypt = async (val: any) => {
+          return await decryptData(val);
+        };
+
+        profileData.full_name = await decrypt(profileData.full_name);
+        profileData.cedula = await decrypt(profileData.cedula);
+        profileData.phone = await decrypt(profileData.phone);
+        profileData.plan_details = await decrypt(profileData.plan_details);
+        profileData.plan_price = await decrypt(profileData.plan_price);
+      }
+
       setProfile(profileData);
 
-      // Fetch Progress (Sequential)
-      const { data: progressData, error: progressError } = await supabase
-        .from('physical_progress')
-        .select('*')
-        .eq('user_id', userId)
-        .order('date', { ascending: true });
+      // Fetch all data in parallel to avoid sequential timeouts
+      const [
+        { data: progressData, error: progressError },
+        { data: menuData, error: menuError },
+        { data: appData, error: appError },
+        { data: examData, error: examError },
+        { data: proofData, error: proofError },
+        { data: trainingData, error: trainingError },
+        { data: settingsData, error: settingsError }
+      ] = await Promise.all([
+        supabase.from('physical_progress').select('*').eq('user_id', userId).order('date', { ascending: true }),
+        // Only fetch the most recent menu to save bandwidth and prevent timeouts
+        supabase.from('weekly_menus').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(1),
+        supabase.from('appointments').select('*').eq('user_id', userId).order('date', { ascending: true }),
+        supabase.from('medical_exams').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
+        supabase.from('payments').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
+        supabase.from('training_logs').select('*').eq('user_id', userId).order('date', { ascending: false }).limit(50),
+        supabase.from('system_settings').select('*').eq('id', 'default').maybeSingle()
+      ]);
 
       if (progressError) throw progressError;
-      setProgress(progressData || []);
-
-      // Fetch Menu
-      const { data: menuData, error: menuError } = await supabase
-        .from('weekly_menus')
-        .select('*')
-        .eq('user_id', userId);
-
       if (menuError) throw menuError;
-      setMenu(menuData || []);
-
-      // Fetch Appointments
-      const { data: appData, error: appError } = await supabase
-        .from('appointments')
-        .select('*')
-        .eq('user_id', userId)
-        .order('date', { ascending: true });
-
       if (appError) throw appError;
-      setAppointments(appData || []);
-
-      // Fetch Exams
-      const { data: examData, error: examError } = await supabase
-        .from('medical_exams')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-
       if (examError) throw examError;
-      setExams(examData || []);
-
-      // Fetch Payment Proofs
-      const { data: proofData, error: proofError } = await supabase
-        .from('payment_proofs')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-
       if (proofError) throw proofError;
-      setPaymentProofs(proofData || []);
-
-      // Fetch Training Logs
-      const { data: trainingData, error: trainingError } = await supabase
-        .from('training_logs')
-        .select('*')
-        .eq('user_id', userId)
-        .order('date', { ascending: false });
-
       if (trainingError) throw trainingError;
+      if (settingsError) throw settingsError;
+
+      setProgress(progressData || []);
+      
+      // Intentar descifrar el contenido del menú si es necesario
+      let processedMenu = menuData || [];
+      if (processedMenu.length > 0) {
+        const menuToProcess = processedMenu[0];
+        let content = menuToProcess.content;
+
+        // 1. Decrypt if encrypted using local utility
+        if (typeof content === 'string' && content.startsWith('U2FsdGVkX1')) {
+          try {
+            const decrypted = await decryptData(content);
+            if (decrypted) {
+              content = decrypted;
+              menuToProcess.content = content;
+            }
+          } catch (err) {
+            console.error('Error decrypting menu:', err);
+          }
+        }
+
+        // 2. Parse JSON if content is a JSON string or already an object
+        let dailyData = null;
+        if (typeof content === 'object' && content !== null) {
+          dailyData = (content as any).days || (Array.isArray(content) ? content : null);
+        } else if (typeof content === 'string' && (content.trim().startsWith('{') || content.trim().startsWith('['))) {
+          try {
+            const parsed = robustJSONRepair(content);
+            dailyData = parsed.days || (Array.isArray(parsed) ? parsed : null);
+          } catch (e) {
+            console.error('Error parsing menu JSON even after robust repair attempt:', e);
+          }
+        }
+        
+        if (dailyData && (!menuToProcess.daily_menus || menuToProcess.daily_menus.length === 0)) {
+          menuToProcess.daily_menus = dailyData;
+        }
+      }
+      
+      // Decrypt payment notes
+      const decryptedPayments = await Promise.all((proofData || []).map(async (p: any) => ({
+        ...p,
+        notes: await decryptData(p.notes)
+      })));
+      
+      setMenu(processedMenu);
+      setAppointments(appData || []);
+      setExams(examData || []);
+      setPayments(decryptedPayments);
       setTrainingLogs(trainingData || []);
+      
+      let finalSettings = settingsData;
+      if (!finalSettings) {
+        // Initialize default settings if they don't exist
+        const defaultReasons = ["Evaluación Nutricional", "Ajuste de Rutina", "Consulta General", "Fisioterapia", "Pesaje"];
+        const { data: newSettings, error: initError } = await supabase
+          .from('system_settings')
+          .insert({ id: 'default', appointment_reasons: defaultReasons })
+          .select()
+          .maybeSingle();
+        
+        if (!initError && newSettings) {
+          finalSettings = newSettings;
+        }
+      }
+      setSystemSettings(finalSettings || null);
 
       // Fetch Stripe Data (if FDW is configured)
       if (profileData?.id && profileData?.stripe_customer_id) {
         try {
-          const { data: invoices } = await supabase
-            .schema('stripe')
-            .from('invoices')
-            .select('*')
-            .eq('customer', profileData.stripe_customer_id)
-            .limit(10);
-          setStripeInvoices(invoices || []);
-
-          const { data: subs } = await supabase
-            .schema('stripe')
-            .from('subscriptions')
-            .select('*')
-            .eq('customer', profileData.stripe_customer_id)
-            .limit(10);
-          setStripeSubscriptions(subs || []);
+          const [invoicesRes, subsRes] = await Promise.all([
+            supabase.schema('stripe').from('invoices').select('*').eq('customer', profileData.stripe_customer_id).limit(5),
+            supabase.schema('stripe').from('subscriptions').select('*').eq('customer', profileData.stripe_customer_id).limit(5)
+          ]);
+          setStripeInvoices(invoicesRes.data || []);
+          setStripeSubscriptions(subsRes.data || []);
         } catch (err) {
           console.warn('Stripe FDW not configured or accessible:', err);
         }
@@ -444,7 +274,11 @@ export default function App() {
 
     } catch (err) {
       console.error('Error fetching data:', err);
-      setAuthError('No se pudo cargar tu perfil. Contacta a un administrador.');
+      if (err instanceof TypeError && err.message === 'Failed to fetch') {
+        setAuthError('Error de conexión: No se pudo contactar con el servidor de base de datos. Verifica tu conexión o las credenciales de Supabase.');
+      } else {
+        setAuthError('No se pudo cargar tu perfil. Contacta a un administrador.');
+      }
     } finally {
       setLoading(false);
     }
@@ -459,19 +293,16 @@ export default function App() {
 
   const handleLogout = () => supabase.auth.signOut();
 
-  const handleAddAppointment = async (title: string, date: string, time: string) => {
+  const handleAddAppointment = async (type: string, date: string, time: string) => {
     if (!user) return;
     const { error } = await supabase
       .from('appointments')
-      .insert([{ user_id: user.id, title, date, time, status: 'scheduled' }]);
+      .insert([{ user_id: user.id, type, date, time, status: 'pending' }]);
     
     if (error) {
       console.error('Error adding appointment:', error);
-      alert('Error al agendar la cita');
     } else {
-      // Refresh data
-      const { data } = await supabase.from('appointments').select('*').eq('user_id', user.id);
-      if (data) setAppointments(data);
+      fetchData(user.id);
       setIsAppointmentModalOpen(false);
     }
   };
@@ -494,65 +325,55 @@ export default function App() {
         .from('exams')
         .getPublicUrl(fileName);
 
-      // 2. Process with AI (Gemini)
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
-      // Convert file to base64 for Gemini (if it's an image)
-      // Note: For PDFs, we might need a different approach or just ask Gemini to analyze the text if we can extract it.
-      // For now, let's assume image or simple analysis.
-      let base64Data = "";
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        base64Data = await new Promise((resolve) => {
-          reader.onload = () => resolve((reader.result as string).split(',')[1]);
-          reader.readAsDataURL(file);
-        });
-      }
-
-      const prompt = "Analiza este examen médico. Extrae el nombre del examen y la fecha en que se realizó. Responde en formato JSON con los campos 'title' y 'date' (YYYY-MM-DD). Si no encuentras la fecha, usa la fecha actual.";
-      
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: file.type.startsWith('image/') 
-          ? [{ parts: [{ text: prompt }, { inlineData: { data: base64Data, mimeType: file.type } }] }]
-          : [{ parts: [{ text: `${prompt}. El archivo es un PDF llamado ${file.name}.` }] }],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              title: { type: Type.STRING },
-              date: { type: Type.STRING }
-            },
-            required: ["title", "date"]
-          }
-        }
-      });
-
-      const aiResult = JSON.parse(response.text || "{}");
-
-      // 3. Save to Database
+      // 2. Save to Database (No AI analysis)
       const { error: dbError } = await supabase
         .from('medical_exams')
         .insert([{ 
           user_id: user.id, 
           file_url: publicUrl,
           file_name: file.name,
-          digitized_data: JSON.stringify(aiResult)
+          date: new Date().toISOString().split('T')[0]
         }]);
       
       if (dbError) throw dbError;
 
-      alert('Examen subido y analizado con éxito.');
       fetchData(user.id);
       setIsExamModalOpen(false);
     } catch (err) {
-      console.error('Error processing exam:', err);
-      alert('Error al procesar el examen. Asegúrate de que el bucket "exams" exista en Supabase.');
+      console.error('Error uploading exam:', err);
     }
   };
 
-  const handleUploadPaymentProof = async (file: File) => {
+  const handleDeleteExam = async (examId: string, fileUrl: string) => {
+    if (!user) return;
+
+    try {
+      // 1. Delete from Storage if fileUrl exists
+      if (fileUrl) {
+        // Extract path from URL (assuming it's a public URL from Supabase)
+        // Format: .../storage/v1/object/public/exams/userId/filename
+        const pathParts = fileUrl.split('/exams/');
+        if (pathParts.length > 1) {
+          const filePath = pathParts[1];
+          await supabase.storage.from('exams').remove([filePath]);
+        }
+      }
+
+      // 2. Delete from Database
+      const { error } = await supabase
+        .from('medical_exams')
+        .delete()
+        .eq('id', examId);
+
+      if (error) throw error;
+
+      fetchData(user.id);
+    } catch (err) {
+      console.error('Error deleting exam:', err);
+    }
+  };
+
+  const handleUploadPayment = async (file: File) => {
     if (!user) return;
     
     try {
@@ -560,32 +381,35 @@ export default function App() {
       const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
       
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('payment_proofs')
+        .from('payments')
         .upload(fileName, file);
 
       if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage
-        .from('payment_proofs')
+        .from('payments')
         .getPublicUrl(fileName);
 
+      // Encrypt the URL before saving to notes
+      const encryptedNotes = await encryptData(publicUrl);
+
       const { error: dbError } = await supabase
-        .from('payment_proofs')
+        .from('payments')
         .insert([{ 
           user_id: user.id, 
-          file_url: publicUrl,
-          file_name: file.name,
-          status: 'pending'
+          amount: parseFloat(profile?.plan_price || '45'),
+          method: 'Transferencia/Yappy',
+          status: 'pending',
+          notes: encryptedNotes,
+          date: new Date().toISOString()
         }]);
       
       if (dbError) throw dbError;
 
-      alert('Comprobante enviado con éxito. Será revisado por el equipo.');
       fetchData(user.id);
-      setIsPaymentProofModalOpen(false);
+      setIsPaymentModalOpen(false);
     } catch (err) {
-      console.error('Error uploading payment proof:', err);
-      alert('Error al subir el comprobante. Asegúrate de que el bucket "payment_proofs" exista en Supabase.');
+      console.error('Error uploading payment:', err);
     }
   };
 
@@ -609,7 +433,83 @@ export default function App() {
       }
     } catch (err) {
       console.error('Error creating subscription:', err);
-      alert('Error al iniciar el proceso de pago. Por favor, intenta de nuevo.');
+      if (err instanceof Error && err.message.includes('STRIPE_SECRET_KEY')) {
+        alert('Configuración de Stripe pendiente. Por favor, asegúrate de haber configurado la clave secreta de Stripe en Settings > Secrets.');
+      } else {
+        alert('Error al iniciar el proceso de pago. Verifica que tu administrador haya configurado las claves de Stripe correctamente.');
+      }
+    }
+  };
+
+  const handleCancelSubscription = async (subscriptionId: string) => {
+    if (!window.confirm('¿Estás seguro de que deseas cancelar tu suscripción? Tu acceso premium se desactivará al final del periodo actual.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/cancel-subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscriptionId })
+      });
+      
+      const data = await response.json();
+      if (response.ok) {
+        alert('Suscripción cancelada con éxito.');
+        if (user) fetchData(user.id);
+      } else {
+        throw new Error(data.error || 'Error al cancelar la suscripción');
+      }
+    } catch (err) {
+      console.error('Error cancelling subscription:', err);
+      alert('Error al cancelar la suscripción. Por favor, contacta a soporte.');
+    }
+  };
+
+  const handleUpdateMenu = async (menuId: string, dailyMenus: DailyMenu[]) => {
+    const { error } = await supabase
+      .from('weekly_menus')
+      .update({ daily_menus: dailyMenus })
+      .eq('id', menuId);
+    
+    if (error) {
+      console.error('Error updating menu:', error);
+      alert('Error al actualizar el menú');
+    } else {
+      setMenu(prev => prev.map(m => m.id === menuId ? { ...m, daily_menus: dailyMenus } : m));
+    }
+  };
+
+  const handleCancelAppointment = async (id: string, reason: string) => {
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .update({ 
+          status: 'cancelled'
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      if (user) fetchData(user.id);
+    } catch (err) {
+      console.error('Error cancelling appointment:', err);
+      alert('Error al cancelar la cita. Por favor, intenta de nuevo.');
+    }
+  };
+
+  const handleUpdateSettings = async (reasons: string[]) => {
+    try {
+      const { error } = await supabase
+        .from('system_settings')
+        .upsert({ id: 'default', appointment_reasons: reasons });
+
+      if (error) throw error;
+      
+      setSystemSettings(prev => prev ? { ...prev, appointment_reasons: reasons } : { id: 'default', appointment_reasons: reasons, created_at: new Date().toISOString() });
+    } catch (err) {
+      console.error('Error updating settings:', err);
+      alert('Error al actualizar la configuración');
     }
   };
 
@@ -669,6 +569,15 @@ export default function App() {
               Iniciar Sesión
             </button>
           </form>
+          {(!import.meta.env.VITE_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL === 'undefined') && (
+            <div className="mt-8 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-sm">
+              <p className="font-bold flex items-center gap-2 mb-1">
+                <AlertCircle size={16} />
+                Configuración Pendiente
+              </p>
+              <p>Las variables de entorno de Supabase no están configuradas. Por favor, revisa el menú de Configuración en AI Studio.</p>
+            </div>
+          )}
         </motion.div>
       </div>
     );
@@ -676,6 +585,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-zinc-50 flex flex-col md:flex-row font-sans text-zinc-900">
+      <Toaster position="top-center" richColors />
       {/* Sidebar */}
       <aside className="w-full md:w-64 bg-white border-r border-zinc-200 p-6 flex flex-col gap-8">
         <div className="flex items-center gap-3 px-2">
@@ -722,13 +632,21 @@ export default function App() {
             icon={CreditCard} 
             label="Pagos" 
           />
-          {(profile?.role === 'admin' || profile?.role === 'nutritionist') && (
-            <NavItem 
-              active={activeTab === 'clients'} 
-              onClick={() => setActiveTab('clients')} 
-              icon={Users} 
-              label="Clientes" 
-            />
+          {(profile?.role === 'admin' || profile?.role === 'nutritionist' || profile?.role === 'manager') && (
+            <>
+              <NavItem 
+                active={activeTab === 'clients'} 
+                onClick={() => setActiveTab('clients')} 
+                icon={Users} 
+                label="Clientes" 
+              />
+              <NavItem 
+                active={activeTab === 'settings'} 
+                onClick={() => setActiveTab('settings')} 
+                icon={Settings} 
+                label="Configuración" 
+              />
+            </>
           )}
         </nav>
 
@@ -771,6 +689,7 @@ export default function App() {
               {activeTab === 'appointments' && 'Gestiona tus sesiones con especialistas'}
               {activeTab === 'payments' && 'Control de tus suscripciones'}
               {activeTab === 'clients' && 'Administra la base de datos de usuarios'}
+              {activeTab === 'settings' && 'Ajustes maestros del sistema'}
             </p>
           </div>
           <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-full border border-zinc-200 shadow-sm self-start">
@@ -794,18 +713,26 @@ export default function App() {
           >
             {activeTab === 'dashboard' && <DashboardView progress={progress} profile={profile} />}
             {activeTab === 'training' && <TrainingLogsView logs={trainingLogs} />}
-            {activeTab === 'menu' && <MenuView menu={menu} />}
-            {activeTab === 'appointments' && <AppointmentsView appointments={appointments} onAdd={() => setIsAppointmentModalOpen(true)} />}
-            {activeTab === 'exams' && <ExamsView exams={exams} onUpload={() => setIsExamModalOpen(true)} />}
+            {activeTab === 'menu' && <MenuView menu={menu} onUpdateMenu={handleUpdateMenu} profile={profile} />}
+            {activeTab === 'appointments' && (
+              <AppointmentsView 
+                appointments={appointments} 
+                onAdd={() => setIsAppointmentModalOpen(true)} 
+                onCancel={handleCancelAppointment}
+              />
+            )}
+            {activeTab === 'exams' && <ExamsView exams={exams} onUpload={() => setIsExamModalOpen(true)} onDelete={handleDeleteExam} />}
             {activeTab === 'clients' && <ClientsView />}
+            {activeTab === 'settings' && <SettingsView settings={systemSettings} onUpdate={handleUpdateSettings} />}
             {activeTab === 'payments' && (
               <PaymentsView 
                 profile={profile} 
                 invoices={stripeInvoices} 
                 subscriptions={stripeSubscriptions}
-                paymentProofs={paymentProofs}
+                payments={payments}
                 onCreateSub={handleCreateSubscription}
-                onUploadProof={() => setIsPaymentProofModalOpen(true)}
+                onCancelSub={handleCancelSubscription}
+                onUploadProof={() => setIsPaymentModalOpen(true)}
               />
             )}
           </motion.div>
@@ -817,6 +744,7 @@ export default function App() {
         <AppointmentModal 
           onClose={() => setIsAppointmentModalOpen(false)} 
           onSubmit={handleAddAppointment} 
+          reasons={systemSettings?.appointment_reasons || []}
         />
       )}
       {isExamModalOpen && (
@@ -825,605 +753,12 @@ export default function App() {
           onSubmit={handleUploadExam} 
         />
       )}
-      {isPaymentProofModalOpen && (
+      {isPaymentModalOpen && (
         <PaymentProofModal 
-          onClose={() => setIsPaymentProofModalOpen(false)} 
-          onSubmit={handleUploadPaymentProof} 
+          onClose={() => setIsPaymentModalOpen(false)} 
+          onSubmit={handleUploadPayment} 
         />
       )}
-    </div>
-  );
-}
-
-// --- Sub-Views ---
-
-function NavItem({ active, onClick, icon: Icon, label }: { active: boolean, onClick: () => void, icon: any, label: string }) {
-  return (
-    <button 
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium",
-        active 
-          ? "bg-zinc-900 text-white shadow-lg shadow-zinc-200" 
-          : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-      )}
-    >
-      <Icon size={20} />
-      <span>{label}</span>
-    </button>
-  );
-}
-
-function DashboardView({ progress, profile }: { progress: ProgressData[], profile: UserProfile | null }) {
-  if (progress.length === 0 && !profile) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
-        <TrendingUp size={48} className="mb-4 opacity-20" />
-        <p className="font-medium">Aún no hay datos registrados.</p>
-      </div>
-    );
-  }
-  const latest = progress[progress.length - 1];
-  const previous = progress[progress.length - 2];
-  
-  const weightTrend = latest && previous ? (latest.weight - previous.weight).toFixed(1) : null;
-  const fatTrend = latest && previous && latest.fat_percentage && previous.fat_percentage ? (latest.fat_percentage - previous.fat_percentage).toFixed(1) : null;
-
-  return (
-    <div className="space-y-8">
-      {/* Datos del Administrador */}
-      {profile && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card title="Mis Datos Personales">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Cédula</p>
-                <p className="text-sm font-medium">{profile.cedula || 'No registrada'}</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Teléfono</p>
-                <p className="text-sm font-medium">{profile.phone || 'No registrado'}</p>
-              </div>
-              <div className="col-span-2">
-                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Email</p>
-                <p className="text-sm font-medium">{profile.email}</p>
-              </div>
-            </div>
-          </Card>
-          <Card title="Información del Plan">
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-bold text-zinc-900">{profile.plan_name || 'Sin Plan Asignado'}</span>
-                <span className="text-lg font-bold text-zinc-900">${profile.plan_price?.toFixed(2) || '0.00'}</span>
-              </div>
-              <p className="text-xs text-zinc-500 leading-relaxed">{profile.plan_details || 'Contacta a administración para más detalles sobre tu plan.'}</p>
-              <div className="pt-2">
-                <span className={cn(
-                  "px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest",
-                  profile.is_active ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-                )}>
-                  {profile.is_active ? 'Suscripción Activa' : 'Suscripción Inactiva'}
-                </span>
-              </div>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <Stat 
-        label="Peso Actual" 
-        value={latest ? `${latest.weight} kg` : '--'} 
-        icon={TrendingUp} 
-        trend={weightTrend ? `${weightTrend} kg vs anterior` : undefined} 
-      />
-      <Stat 
-        label="Grasa Corporal" 
-        value={latest?.fat_percentage ? `${latest.fat_percentage}%` : '--'} 
-        icon={TrendingUp} 
-        trend={fatTrend ? `${fatTrend}% vs anterior` : undefined} 
-      />
-      <Stat label="Masa Muscular" value={latest?.muscle_mass ? `${latest.muscle_mass} kg` : '--'} icon={TrendingUp} />
-
-      <Card title="Evolución de Peso" className="md:col-span-2 h-[400px]">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wider">Evolución de Peso</h3>
-          {latest && (
-            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">
-              Última actualización: {new Date(latest.date).toLocaleDateString('es-ES')}
-            </span>
-          )}
-        </div>
-        <ResponsiveContainer width="100%" height="90%">
-          <LineChart data={progress}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-            <XAxis 
-              dataKey="date" 
-              axisLine={false} 
-              tickLine={false} 
-              tick={{ fontSize: 12, fill: '#71717a' }}
-              tickFormatter={(val) => new Date(val).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' })}
-            />
-            <YAxis 
-              axisLine={false} 
-              tickLine={false} 
-              tick={{ fontSize: 12, fill: '#71717a' }}
-              domain={['dataMin - 2', 'dataMax + 2']}
-            />
-            <Tooltip 
-              contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-            />
-            <Line 
-              type="monotone" 
-              dataKey="weight" 
-              stroke="#18181b" 
-              strokeWidth={3} 
-              dot={{ r: 4, fill: '#18181b', strokeWidth: 2, stroke: '#fff' }}
-              activeDot={{ r: 6, strokeWidth: 0 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </Card>
-
-      <Card title="Composición Corporal" className="h-[400px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={progress.slice(-3)}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-            <XAxis 
-              dataKey="date" 
-              axisLine={false} 
-              tickLine={false} 
-              tick={{ fontSize: 12, fill: '#71717a' }}
-              tickFormatter={(val) => new Date(val).toLocaleDateString('es-ES', { month: 'short' })}
-            />
-            <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#71717a' }} />
-            <Tooltip 
-              contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-            />
-            <Bar dataKey="fat_percentage" name="Grasa %" fill="#e4e4e7" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </Card>
-
-      {latest?.notes && (
-        <Card className="md:col-span-3 bg-zinc-900 text-white border-none">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-white/10 rounded-xl">
-              <TrendingUp size={24} />
-            </div>
-            <div>
-              <h4 className="font-semibold">Nota de tu Coach</h4>
-              <p className="text-zinc-400 text-sm">{latest.notes}</p>
-            </div>
-          </div>
-        </Card>
-      )}
-    </div>
-  </div>
-  );
-}
-
-function MenuView({ menu }: { menu: WeeklyMenu[] }) {
-  const hasMenu = menu.length > 0;
-
-  if (!hasMenu) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
-        <Utensils size={48} className="mb-4 opacity-20" />
-        <p className="font-medium">Aún no tienes un menú asignado.</p>
-        <p className="text-sm">Tu nutricionista lo publicará pronto.</p>
-      </div>
-    );
-  }
-  
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center mb-2">
-        <p className="text-sm text-zinc-500">Plan nutricional actualizado semanalmente por tu nutricionista.</p>
-        <span className="bg-zinc-100 text-zinc-600 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">
-          Semana Actual
-        </span>
-      </div>
-      <div className="grid grid-cols-1 gap-4">
-        {menu.map((item) => (
-          <Card key={item.id} title={item.is_approved ? "Menú Aprobado" : "Pendiente de Aprobación"}>
-            <div className="prose prose-zinc max-w-none">
-              <div className="whitespace-pre-wrap text-zinc-700 leading-relaxed">
-                {item.content}
-              </div>
-            </div>
-            <div className="mt-4 pt-4 border-t border-zinc-100 flex justify-between items-center">
-              <span className="text-xs text-zinc-400 font-medium">
-                Publicado el: {new Date(item.created_at).toLocaleDateString('es-ES')}
-              </span>
-              {item.is_approved && (
-                <div className="flex items-center gap-1 text-emerald-600 text-xs font-bold uppercase tracking-widest">
-                  <CheckCircle2 size={14} /> Aprobado
-                </div>
-              )}
-            </div>
-          </Card>
-        ))}
-      </div>
-      <Card className="bg-zinc-900 text-white border-none">
-        <div className="flex items-center gap-4">
-          <div className="p-3 bg-white/10 rounded-xl">
-            <AlertCircle size={24} />
-          </div>
-          <div>
-            <h4 className="font-semibold">Recomendación del Nutricionista</h4>
-            <p className="text-zinc-400 text-sm">Recuerda mantenerte hidratado. Bebe al menos 2.5 litros de agua al día y evita las bebidas azucaradas.</p>
-          </div>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-function AppointmentsView({ appointments, onAdd }: { appointments: Appointment[], onAdd: () => void }) {
-  const scheduled = appointments.filter(a => a.status === 'scheduled');
-  const completed = appointments.filter(a => a.status === 'completed');
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-      <div className="space-y-4">
-        <h3 className="text-lg font-bold mb-4">Próximas Citas</h3>
-        {scheduled.length > 0 ? scheduled.map(app => (
-          <div key={app.id} className="bg-white p-5 rounded-2xl border border-zinc-200 shadow-sm flex items-center justify-between group hover:border-zinc-900 transition-all cursor-pointer">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-zinc-50 rounded-xl flex flex-col items-center justify-center text-zinc-500 group-hover:bg-zinc-900 group-hover:text-white transition-all">
-                <span className="text-[10px] font-bold uppercase">{new Date(app.date).toLocaleDateString('es-ES', { month: 'short' })}</span>
-                <span className="text-lg font-bold leading-none">{new Date(app.date).getDate()}</span>
-              </div>
-              <div>
-                <h4 className="font-bold text-zinc-900">{app.title}</h4>
-                <div className="flex items-center gap-2 text-zinc-500 text-sm mt-1">
-                  <Clock size={14} />
-                  <span>{app.time}</span>
-                </div>
-              </div>
-            </div>
-            <ChevronRight className="text-zinc-300 group-hover:text-zinc-900 transition-all" />
-          </div>
-        )) : (
-          <div className="p-8 border border-dashed border-zinc-200 rounded-2xl text-center text-zinc-400">
-            <p className="text-sm">No tienes citas programadas.</p>
-          </div>
-        )}
-        <button 
-          onClick={onAdd}
-          className="w-full py-4 border-2 border-dashed border-zinc-200 rounded-2xl text-zinc-500 font-medium hover:border-zinc-900 hover:text-zinc-900 transition-all"
-        >
-          + Agendar Nueva Cita
-        </button>
-      </div>
-
-      <div className="space-y-4">
-        <h3 className="text-lg font-bold mb-4">Historial</h3>
-        {completed.length > 0 ? completed.map(app => (
-          <div key={app.id} className="bg-zinc-50 p-4 rounded-xl flex items-center justify-between opacity-60">
-            <div className="flex items-center gap-4">
-              <CheckCircle2 className="text-emerald-500" size={20} />
-              <div>
-                <h4 className="font-medium text-zinc-900">{app.title}</h4>
-                <p className="text-xs text-zinc-500">{new Date(app.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-              </div>
-            </div>
-          </div>
-        )) : (
-          <div className="p-4 text-center text-zinc-400 text-sm italic">
-            Sin historial de citas.
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ExamsView({ exams, onUpload }: { exams: Exam[], onUpload: () => void }) {
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-bold">Resultados de Exámenes</h3>
-        <button 
-          onClick={onUpload}
-          className="flex items-center gap-2 px-4 py-2 bg-zinc-900 text-white rounded-xl hover:bg-zinc-800 transition-all text-sm font-medium"
-        >
-          <Upload size={16} />
-          Subir Resultados
-        </button>
-      </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {exams.length > 0 ? exams.map(exam => {
-          let data: any = {};
-          try {
-            data = JSON.parse(exam.digitized_data || "{}");
-          } catch (e) {}
-
-          return (
-            <Card key={exam.id} className="hover:border-zinc-900 transition-all cursor-pointer group">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-zinc-50 rounded-xl text-zinc-400 group-hover:bg-zinc-900 group-hover:text-white transition-all">
-                    <AlertCircle size={20} />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-zinc-900">{data.title || exam.file_name}</h4>
-                    <p className="text-xs text-zinc-500">{data.date || new Date(exam.created_at).toLocaleDateString('es-ES')}</p>
-                  </div>
-                </div>
-                {exam.file_url && (
-                  <a 
-                    href={exam.file_url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="p-2 bg-zinc-100 rounded-lg text-zinc-500 hover:bg-zinc-900 hover:text-white transition-all"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Upload size={16} />
-                  </a>
-                )}
-              </div>
-              <div className="mt-4 p-3 bg-zinc-50 rounded-lg text-sm text-zinc-600">
-                {data.summary || "Examen procesado por IA."}
-              </div>
-            </Card>
-          );
-        }) : (
-          <div className="md:col-span-2 py-12 border-2 border-dashed border-zinc-200 rounded-3xl text-center text-zinc-400">
-            <AlertCircle size={32} className="mx-auto mb-2 opacity-20" />
-            <p>No has subido resultados de exámenes aún.</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TrainingLogsView({ logs }: { logs: TrainingLog[] }) {
-  if (logs.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
-        <TrendingUp size={48} className="mb-4 opacity-20" />
-        <p className="font-medium">Aún no hay registros de entrenamiento.</p>
-        <p className="text-sm">Tus rutinas aparecerán aquí una vez que comiences.</p>
-      </div>
-    );
-  }
-
-  const groupedLogs = logs.reduce((acc: any, log) => {
-    if (!acc[log.date]) acc[log.date] = [];
-    acc[log.date].push(log);
-    return acc;
-  }, {});
-
-  return (
-    <div className="space-y-8">
-      {Object.entries(groupedLogs).map(([date, dayLogs]: [string, any]) => (
-        <div key={date} className="space-y-4">
-          <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
-            <Calendar size={14} /> {new Date(date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {dayLogs.map((log: TrainingLog) => (
-              <Card key={log.id} className="flex flex-col gap-3">
-                <div className="flex justify-between items-start">
-                  <h4 className="font-bold text-zinc-900">{log.exercise_name}</h4>
-                  <span className="text-xs font-bold bg-zinc-100 px-2 py-1 rounded text-zinc-600">
-                    {log.sets} x {log.reps}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-zinc-500">
-                  <TrendingUp size={14} />
-                  <span>{log.weight_kg} kg</span>
-                </div>
-                {log.notes && (
-                  <p className="text-xs text-zinc-400 italic mt-1">"{log.notes}"</p>
-                )}
-              </Card>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ClientsView() {
-  const [clients, setClients] = useState<UserProfile[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchClients = async () => {
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('full_name');
-      setClients(data || []);
-      setLoading(false);
-    };
-    fetchClients();
-  }, []);
-
-  if (loading) return <div className="text-center py-10">Cargando clientes...</div>;
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {clients.map(client => (
-          <Card key={client.id} className="hover:border-zinc-900 transition-all cursor-pointer group">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-zinc-100 rounded-full flex items-center justify-center group-hover:bg-zinc-900 group-hover:text-white transition-all">
-                <User size={24} />
-              </div>
-              <div className="overflow-hidden">
-                <h4 className="font-bold text-zinc-900 truncate">{client.full_name}</h4>
-                <p className="text-xs text-zinc-500 truncate">{client.email}</p>
-              </div>
-            </div>
-            <div className="mt-4 pt-4 border-t border-zinc-100 flex justify-between items-center">
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Rol</span>
-                <span className="text-xs font-medium capitalize">{client.role}</span>
-              </div>
-              <span className={cn(
-                "text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full",
-                client.is_active ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-              )}>
-                {client.is_active ? 'Activo' : 'Inactivo'}
-              </span>
-            </div>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PaymentsView({ 
-  profile, 
-  invoices, 
-  subscriptions,
-  paymentProofs,
-  onCreateSub,
-  onUploadProof
-}: { 
-  profile: UserProfile | null, 
-  invoices: StripeInvoice[],
-  subscriptions: StripeSubscription[],
-  paymentProofs: PaymentProof[],
-  onCreateSub: (priceId: string) => void,
-  onUploadProof: () => void
-}) {
-  const activeSub = subscriptions.find(s => s.status === 'active');
-  const amountToPay = profile?.plan_price ?? (activeSub ? 45 : 0);
-
-  return (
-    <div className="max-w-2xl mx-auto space-y-8">
-      <Card className="text-center py-10">
-        <div className={cn(
-          "w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6",
-          activeSub || profile?.is_active ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"
-        )}>
-          {activeSub || profile?.is_active ? <CheckCircle2 size={40} /> : <AlertCircle size={40} />}
-        </div>
-        <h3 className="text-2xl font-bold text-zinc-900">
-          {profile?.is_active ? 'Tu cuenta está activa' : 'Cuenta inactiva'}
-        </h3>
-        
-        <div className="mt-4 space-y-1">
-          {profile?.plan_name && (
-            <p className="text-lg font-semibold text-zinc-900">{profile.plan_name}</p>
-          )}
-          {profile?.plan_price != null && (
-            <p className="text-3xl font-bold text-zinc-900">${profile.plan_price.toFixed(2)}<span className="text-sm text-zinc-500 font-normal">/mes</span></p>
-          )}
-          {profile?.plan_details && (
-            <p className="text-sm text-zinc-500 max-w-xs mx-auto">{profile.plan_details}</p>
-          )}
-        </div>
-
-        {!activeSub && !profile?.plan_price && (
-          <div className="mt-6 p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
-            <p className="text-sm text-zinc-500">No tienes un monto mensual asignado. Por favor, contacta a tu coach para definir tu plan de pagos.</p>
-          </div>
-        )}
-
-        <div className="mt-8 pt-8 border-t border-zinc-100 grid grid-cols-2 gap-4">
-          <div className="text-left">
-            <p className="text-xs text-zinc-400 uppercase font-bold tracking-widest">Estado de Cuenta</p>
-            <p className="font-bold text-lg capitalize">{profile?.is_active ? 'Activa' : 'Inactiva'}</p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-zinc-400 uppercase font-bold tracking-widest">Monto Mensual</p>
-            <p className="font-bold text-lg">${amountToPay.toFixed(2)}</p>
-          </div>
-        </div>
-
-        <button 
-          onClick={onUploadProof}
-          className="w-full mt-8 py-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all flex items-center justify-center gap-2"
-        >
-          <Upload size={20} />
-          Enviar Comprobante (Transferencia/Yappy)
-        </button>
-      </Card>
-
-      {paymentProofs.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-bold">Comprobantes Enviados</h3>
-          <div className="space-y-3">
-            {paymentProofs.map(proof => (
-              <div key={proof.id} className="bg-white p-4 rounded-2xl border border-zinc-100 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className={cn(
-                    "p-2 rounded-lg",
-                    proof.status === 'approved' ? "bg-emerald-50 text-emerald-600" :
-                    proof.status === 'rejected' ? "bg-red-50 text-red-600" :
-                    "bg-amber-50 text-amber-600"
-                  )}>
-                    {proof.status === 'approved' ? <CheckCircle2 size={18} /> :
-                     proof.status === 'rejected' ? <AlertCircle size={18} /> :
-                     <Clock size={18} />}
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-zinc-900">{proof.file_name}</p>
-                    <p className="text-xs text-zinc-500">{new Date(proof.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className={cn(
-                    "text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full",
-                    proof.status === 'approved' ? "bg-emerald-100 text-emerald-700" :
-                    proof.status === 'rejected' ? "bg-red-100 text-red-700" :
-                    "bg-amber-100 text-amber-700"
-                  )}>
-                    {proof.status === 'approved' ? 'Aprobado' :
-                     proof.status === 'rejected' ? 'Rechazado' :
-                     'Pendiente'}
-                  </span>
-                  <a 
-                    href={proof.file_url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="p-2 bg-zinc-50 rounded-lg text-zinc-400 hover:text-zinc-900 transition-all"
-                  >
-                    <Upload size={14} />
-                  </a>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="space-y-4">
-        <h3 className="text-lg font-bold">Facturas Recientes</h3>
-        <div className="space-y-2">
-          {invoices.length > 0 ? invoices.map(invoice => (
-            <div key={invoice.id} className="flex items-center justify-between p-3 hover:bg-zinc-100 rounded-xl transition-all cursor-pointer group">
-              <div className="flex items-center gap-3">
-                <CreditCard size={18} className="text-zinc-400" />
-                <span className="text-sm font-medium">Factura #{invoice.id?.slice(-6) || '...'} - {new Date(invoice.created).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}</span>
-              </div>
-              <div className="flex items-center gap-4">
-                <span className="text-sm font-bold">${(invoice.amount_due / 100).toFixed(2)}</span>
-                <a 
-                  href={invoice.invoice_pdf} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-900"
-                >
-                  PDF <ChevronRight size={14} />
-                </a>
-              </div>
-            </div>
-          )) : (
-            <p className="text-sm text-zinc-400 italic p-4 text-center">No hay facturas registradas.</p>
-          )}
-        </div>
-      </div>
     </div>
   );
 }
