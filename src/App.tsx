@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
 import { UserProfile, ProgressData, WeeklyMenu, Appointment, Exam, TrainingLog, StripeInvoice, StripeSubscription, Payment, DailyMenu, SystemSettings, HydrationData } from './types';
-import { GoogleGenAI, Type } from "@google/genai";
 import { 
   LayoutDashboard, Utensils, Calendar, CreditCard, LogOut, User, 
   ChevronRight, TrendingUp, AlertCircle, Users, Settings
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
 import { decryptData, encryptData } from './lib/encryption';
 import { robustJSONRepair } from './lib/jsonUtils';
 
@@ -73,7 +72,7 @@ export default function App() {
         // Check for payment success
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('payment') === 'success') {
-          alert('¡Pago realizado con éxito! Tu cuenta se actualizará en unos momentos.');
+          toast.success('¡Pago realizado con éxito! Tu cuenta se actualizará en unos momentos.');
           window.history.replaceState({}, document.title, window.location.pathname);
         }
       } else {
@@ -479,9 +478,9 @@ export default function App() {
     } catch (err) {
       console.error('Error creating subscription:', err);
       if (err instanceof Error && err.message.includes('STRIPE_SECRET_KEY')) {
-        alert('Configuración de Stripe pendiente. Por favor, asegúrate de haber configurado la clave secreta de Stripe en Settings > Secrets.');
+        toast.error('Configuración de Stripe pendiente. Por favor, asegúrate de haber configurado la clave secreta de Stripe en Settings > Secrets.');
       } else {
-        alert('Error al iniciar el proceso de pago. Verifica que tu administrador haya configurado las claves de Stripe correctamente.');
+        toast.error('Error al iniciar el proceso de pago. Verifica que tu administrador haya configurado las claves de Stripe correctamente.');
       }
     }
   };
@@ -500,14 +499,14 @@ export default function App() {
       
       const data = await response.json();
       if (response.ok) {
-        alert('Suscripción cancelada con éxito.');
+        toast.success('Suscripción cancelada con éxito.');
         if (user) fetchData(user.id);
       } else {
         throw new Error(data.error || 'Error al cancelar la suscripción');
       }
     } catch (err) {
       console.error('Error cancelling subscription:', err);
-      alert('Error al cancelar la suscripción. Por favor, contacta a soporte.');
+      toast.error('Error al cancelar la suscripción. Por favor, contacta a soporte.');
     }
   };
 
@@ -519,7 +518,7 @@ export default function App() {
     
     if (error) {
       console.error('Error updating menu:', error);
-      alert('Error al actualizar el menú');
+      toast.error('Error al actualizar el menú');
     } else {
       setMenu(prev => prev.map(m => m.id === menuId ? { ...m, daily_menus: dailyMenus } : m));
     }
@@ -539,7 +538,7 @@ export default function App() {
       if (user) fetchData(user.id);
     } catch (err) {
       console.error('Error cancelling appointment:', err);
-      alert('Error al cancelar la cita. Por favor, intenta de nuevo.');
+      toast.error('Error al cancelar la cita. Por favor, intenta de nuevo.');
     }
   };
 
@@ -554,7 +553,7 @@ export default function App() {
       setSystemSettings(prev => prev ? { ...prev, appointment_reasons: reasons } : { id: 'default', appointment_reasons: reasons, created_at: new Date().toISOString() });
     } catch (err) {
       console.error('Error updating settings:', err);
-      alert('Error al actualizar la configuración');
+      toast.error('Error al actualizar la configuración');
     }
   };
 
@@ -575,11 +574,17 @@ export default function App() {
           className="w-full max-w-md bg-white rounded-3xl p-8 shadow-xl border border-black/5"
         >
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-zinc-900 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <TrendingUp className="text-white" size={32} />
+            <div className="w-20 h-20 bg-zinc-900 rounded-2xl flex items-center justify-center mx-auto mb-6 overflow-hidden">
+              <img src="/logo_gym.jpeg" alt="ARA Clientes Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                e.currentTarget.parentElement?.classList.add('bg-zinc-900');
+                const icon = document.createElement('div');
+                icon.innerHTML = '<span class="text-white font-black text-2xl tracking-tighter">ARA</span>';
+                e.currentTarget.parentElement?.appendChild(icon);
+              }} />
             </div>
-            <h1 className="text-2xl font-bold text-zinc-900">Portal Cliente</h1>
-            <p className="text-zinc-500 mt-2">Ingresa tus credenciales para continuar</p>
+            <h1 className="text-3xl font-black text-zinc-900 tracking-tighter uppercase leading-none">ARA CLIENTES</h1>
+            <p className="text-zinc-500 mt-2 italic font-medium">Elevando tu potencial</p>
             <p className="text-[10px] text-zinc-400 mt-4 uppercase tracking-widest font-bold">Tu cuenta debe ser creada por un administrador</p>
           </div>
 
@@ -634,10 +639,16 @@ export default function App() {
       {/* Sidebar */}
       <aside className="w-full md:w-64 bg-white border-r border-zinc-200 p-6 flex flex-col gap-8">
         <div className="flex items-center gap-3 px-2">
-          <div className="w-10 h-10 bg-zinc-900 rounded-xl flex items-center justify-center shrink-0">
-            <TrendingUp className="text-white" size={20} />
+          <div className="w-10 h-10 bg-zinc-900 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
+            <img src="/logo_gym.jpeg" alt="ARA Clientes Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" onError={(e) => {
+              e.currentTarget.style.display = 'none';
+              e.currentTarget.parentElement?.classList.add('bg-zinc-900');
+              const icon = document.createElement('div');
+              icon.innerHTML = '<span class="text-white font-black text-sm tracking-tighter">ARA</span>';
+              e.currentTarget.parentElement?.appendChild(icon);
+            }} />
           </div>
-          <span className="font-bold text-xl tracking-tight">GymFlow</span>
+          <span className="font-black text-xl tracking-tighter uppercase leading-none">ARA CLIENTES</span>
         </div>
 
         <nav className="flex flex-col gap-1">
