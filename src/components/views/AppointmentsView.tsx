@@ -13,12 +13,17 @@ export const AppointmentsView = ({ appointments, onAdd, onCancel }: Appointments
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   
-  const scheduled = appointments.filter(a => a.status === 'pending' || a.status === 'confirmed' || a.status === 'postponed');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const scheduled = appointments.filter(a => 
+    (a.status === 'pending' || a.status === 'confirmed' || a.status === 'postponed') && 
+    new Date(a.date) >= today
+  );
   
-  // Como 'completed' no está en el nuevo esquema, consideramos historial las citas pasadas que no fueron canceladas
   const history = appointments.filter(a => 
     (a.status === 'confirmed' || a.status === 'postponed') && 
-    new Date(a.date) < new Date(new Date().setHours(0,0,0,0))
+    new Date(a.date) < today
   );
 
   const handleCancelSubmit = (e: React.FormEvent) => {

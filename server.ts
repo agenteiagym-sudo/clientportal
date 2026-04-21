@@ -197,7 +197,7 @@ async function startServer() {
   app.post("/api/decrypt", (req, res) => {
     try {
       const { ciphertext } = req.body;
-      const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "tu_clave_aqui";
+      const ENCRYPTION_KEY = process.env.VITE_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || "tu_clave_aqui";
 
       // El formato de CryptoJS suele empezar con U2FsdGVkX1
       if (!ciphertext || typeof ciphertext !== 'string' || !ciphertext.startsWith('U2FsdGVkX1')) {

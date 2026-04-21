@@ -1,7 +1,8 @@
 import React from 'react';
-import { TrendingUp, AlertCircle } from 'lucide-react';
+import { TrendingUp, AlertCircle, Droplets } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, BarChart, Bar } from 'recharts';
-import { UserProfile, ProgressData } from '../../types';
+import { UserProfile, ProgressData, HydrationData } from '../../types';
+import { motion } from 'motion/react';
 import { Card } from '../ui/Card';
 import { Stat } from '../ui/Stat';
 import { cn } from '../../lib/utils';
@@ -9,9 +10,10 @@ import { cn } from '../../lib/utils';
 interface DashboardViewProps {
   progress: ProgressData[];
   profile: UserProfile | null;
+  hydration: HydrationData | null;
 }
 
-export const DashboardView = ({ progress, profile }: DashboardViewProps) => {
+export const DashboardView = ({ progress, profile, hydration }: DashboardViewProps) => {
   if (progress.length === 0 && !profile) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
@@ -105,6 +107,43 @@ export const DashboardView = ({ progress, profile }: DashboardViewProps) => {
         </div>
       )}
 
+      {/* Hydration Section - Featured */}
+      <Card title="Meta de Hidratación" className="bg-blue-50/50 border-blue-100 shadow-blue-100/50">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex items-center gap-5">
+            <div className="p-4 bg-blue-500 rounded-2xl text-white shadow-lg shadow-blue-200">
+              <Droplets size={32} />
+            </div>
+            <div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-4xl font-black text-blue-900 tracking-tighter">
+                  {hydration?.daily_liters || '2.5'}
+                </span>
+                <span className="text-sm font-bold text-blue-600 uppercase tracking-widest">Litros / Día</span>
+              </div>
+              <p className="text-sm text-blue-700/70 mt-1 font-medium italic">
+                "{hydration?.notes || 'Cálculo optimizado para tu rendimiento actual.'}"
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex-1 max-w-xs">
+            <div className="flex justify-between text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-2">
+              <span>Progreso Semanal</span>
+              <span className="text-blue-600">{(parseFloat(hydration?.daily_liters as any) || 2.5) * 7}L Objetivo</span>
+            </div>
+            <div className="h-3 bg-blue-100 rounded-full overflow-hidden p-0.5">
+              <motion.div 
+                initial={{ width: 0 }}
+                animate={{ width: "100%" }}
+                className="h-full bg-blue-500 rounded-full shadow-sm" 
+              />
+            </div>
+            <p className="text-[10px] text-blue-400 mt-2 font-medium">Recordatorio: Bebe pequeños sorbos a lo largo del día.</p>
+          </div>
+        </div>
+      </Card>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       <Stat 
         label="Peso Actual" 
@@ -122,7 +161,7 @@ export const DashboardView = ({ progress, profile }: DashboardViewProps) => {
 
       <Card title="Evolución de Peso" className="md:col-span-2 h-[400px]">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wider">Evolución de Peso</h3>
+          <div />
           {latest && (
             <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">
               Última actualización: {new Date(latest.date).toLocaleDateString('es-ES')}

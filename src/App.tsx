@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
-import { UserProfile, ProgressData, WeeklyMenu, Appointment, Exam, TrainingLog, StripeInvoice, StripeSubscription, Payment, DailyMenu, SystemSettings } from './types';
+import { UserProfile, ProgressData, WeeklyMenu, Appointment, Exam, TrainingLog, StripeInvoice, StripeSubscription, Payment, DailyMenu, SystemSettings, HydrationData } from './types';
 import { GoogleGenAI, Type } from "@google/genai";
 import { 
   LayoutDashboard, Utensils, Calendar, CreditCard, LogOut, User, 
@@ -47,6 +47,7 @@ export default function App() {
   const [isExamModalOpen, setIsExamModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [hydration, setHydration] = useState<HydrationData | null>(null);
   
   // Login State
   const [email, setEmail] = useState('');
@@ -54,15 +55,18 @@ export default function App() {
   const [authError, setAuthError] = useState('');
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) fetchData(session.user.id);
-      else setLoading(false);
-    });
-
+    // Rely exclusively on onAuthStateChange for initial session and changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
+      if (_event === 'SIGNED_OUT') {
+        setUser(null);
+        setProfile(null);
+        setProgress([]);
+        setMenu([]);
+        setAppointments([]);
+        setLoading(false);
+        supabase.removeAllChannels();
+      } else if (session?.user) {
+        setUser(session.user);
         fetchData(session.user.id);
         setupRealtimeSubscription(session.user.id);
         
@@ -70,14 +74,9 @@ export default function App() {
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('payment') === 'success') {
           alert('¡Pago realizado con éxito! Tu cuenta se actualizará en unos momentos.');
-          // Remove the query param from URL
           window.history.replaceState({}, document.title, window.location.pathname);
         }
       } else {
-        setProfile(null);
-        setProgress([]);
-        setMenu([]);
-        setAppointments([]);
         setLoading(false);
       }
     });
@@ -171,7 +170,8 @@ export default function App() {
         { data: examData, error: examError },
         { data: proofData, error: proofError },
         { data: trainingData, error: trainingError },
-        { data: settingsData, error: settingsError }
+        { data: settingsData, error: settingsError },
+        hydrationRes
       ] = await Promise.all([
         supabase.from('physical_progress').select('*').eq('user_id', userId).order('date', { ascending: true }),
         // Only fetch the most recent menu to save bandwidth and prevent timeouts
@@ -180,8 +180,9 @@ export default function App() {
         supabase.from('medical_exams').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
         supabase.from('payments').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
         supabase.from('training_logs').select('*').eq('user_id', userId).order('date', { ascending: false }).limit(50),
-        supabase.from('system_settings').select('*').eq('id', 'default').maybeSingle()
-      ]);
+        supabase.from('system_settings').select('*').eq('id', 'default').maybeSingle(),
+        supabase.from('hydration_data').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(1).maybeSingle()
+      ] as any);
 
       if (progressError) throw progressError;
       if (menuError) throw menuError;
@@ -190,8 +191,43 @@ export default function App() {
       if (proofError) throw proofError;
       if (trainingError) throw trainingError;
       if (settingsError) throw settingsError;
+      
+      const { data: hydrationData, error: hydrationError } = hydrationRes || { data: null, error: null };
+      if (hydrationError) console.error('Error fetching hydration:', hydrationError);
 
-      setProgress(progressData || []);
+      // Decrypt additional data
+      const [decryptedTraining, decryptedProgress, decryptedAppointments, decryptedHydration] = await Promise.all([
+        Promise.all((trainingData || []).map(async (log: any) => ({
+          ...log,
+          exercise_name: await decryptData(log.exercise_name),
+          notes: await decryptData(log.notes)
+        }))),
+        Promise.all((progressData || []).map(async (p: any) => ({
+          ...p,
+          notes: await decryptData(p.notes)
+        }))),
+        Promise.all((appData || []).map(async (app: any) => ({
+          ...app,
+          type: await decryptData(app.type),
+          notes: await decryptData(app.notes)
+        }))),
+        hydrationData ? (async () => ({
+          ...hydrationData,
+          notes: await decryptData(hydrationData.notes)
+        }))() : Promise.resolve(null)
+      ]);
+
+      setProgress(decryptedProgress);
+      setTrainingLogs(decryptedTraining);
+      setAppointments(decryptedAppointments);
+      setHydration(decryptedHydration as any);
+
+      // Decrypt Exams
+      const decryptedExams = await Promise.all((examData || []).map(async (exam: any) => ({
+        ...exam,
+        digitized_data: await decryptData(exam.digitized_data)
+      })));
+      setExams(decryptedExams);
       
       // Intentar descifrar el contenido del menú si es necesario
       let processedMenu = menuData || [];
@@ -228,6 +264,18 @@ export default function App() {
         if (dailyData && (!menuToProcess.daily_menus || menuToProcess.daily_menus.length === 0)) {
           menuToProcess.daily_menus = dailyData;
         }
+
+        // 3. Decrypt individual daily menu fields if they are encrypted
+        if (menuToProcess.daily_menus && Array.isArray(menuToProcess.daily_menus)) {
+          menuToProcess.daily_menus = await Promise.all(menuToProcess.daily_menus.map(async (day: any) => ({
+            ...day,
+            breakfast: await decryptData(day.breakfast),
+            lunch: await decryptData(day.lunch),
+            dinner: await decryptData(day.dinner),
+            snacks: await decryptData(day.snacks),
+            preparation: await decryptData(day.preparation)
+          })));
+        }
       }
       
       // Decrypt payment notes
@@ -237,10 +285,7 @@ export default function App() {
       })));
       
       setMenu(processedMenu);
-      setAppointments(appData || []);
-      setExams(examData || []);
       setPayments(decryptedPayments);
-      setTrainingLogs(trainingData || []);
       
       let finalSettings = settingsData;
       if (!finalSettings) {
@@ -711,7 +756,7 @@ export default function App() {
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
           >
-            {activeTab === 'dashboard' && <DashboardView progress={progress} profile={profile} />}
+            {activeTab === 'dashboard' && <DashboardView progress={progress} profile={profile} hydration={hydration} />}
             {activeTab === 'training' && <TrainingLogsView logs={trainingLogs} />}
             {activeTab === 'menu' && <MenuView menu={menu} onUpdateMenu={handleUpdateMenu} profile={profile} />}
             {activeTab === 'appointments' && (

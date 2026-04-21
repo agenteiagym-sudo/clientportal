@@ -85,6 +85,14 @@ export interface TrainingLog {
   created_at: string;
 }
 
+export interface HydrationData {
+  id: string;
+  user_id: string;
+  daily_liters: number;
+  notes?: string;
+  created_at: string;
+}
+
 export interface StripeInvoice {
   id: string;
   customer: string;

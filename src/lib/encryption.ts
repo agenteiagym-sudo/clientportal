@@ -1,6 +1,11 @@
 import CryptoJS from 'crypto-js';
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'tu_clave_aqui';
+const KEY_FROM_ENV = import.meta.env.VITE_ENCRYPTION_KEY || 
+                     (typeof process !== 'undefined' ? process.env.ENCRYPTION_KEY : null) || 
+                     (typeof process !== 'undefined' ? process.env.VITE_ENCRYPTION_KEY : null) ||
+                     'tu_clave_aqui';
+
+const ENCRYPTION_KEY = KEY_FROM_ENV.trim();
 
 if (ENCRYPTION_KEY === 'tu_clave_aqui' && import.meta.env.PROD) {
   console.warn('WARNING: Using default ENCRYPTION_KEY in production. This is insecure and might cause decryption errors if the other app uses a different key.');
