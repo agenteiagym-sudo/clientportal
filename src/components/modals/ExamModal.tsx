@@ -10,9 +10,10 @@ interface ExamModalProps {
 export const ExamModal = ({ onClose, onSubmit }: ExamModalProps) => {
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   const handleSubmit = async () => {
-    if (!file) return;
+    if (!file || !termsAccepted) return;
     setIsProcessing(true);
     try {
       await onSubmit(file);
@@ -50,6 +51,20 @@ export const ExamModal = ({ onClose, onSubmit }: ExamModalProps) => {
           </div>
         </div>
 
+        <div className="mt-6 flex items-start gap-3 bg-zinc-50 p-4 rounded-2xl border border-zinc-100">
+          <input 
+            type="checkbox" 
+            id="privacy-policy"
+            checked={termsAccepted}
+            onChange={(e) => setTermsAccepted(e.target.checked)}
+            className="mt-1 w-4 h-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900/10 cursor-pointer"
+          />
+          <label htmlFor="privacy-policy" className="text-[10px] leading-relaxed text-zinc-600 select-none cursor-pointer">
+            <span className="font-bold text-zinc-900 block mb-1">Acepto la Política de Privacidad y Tratamiento de Datos.</span>
+            Autorizo expresamente a <span className="font-bold">Essential GYM</span> para la recolección y tratamiento de mis datos personales (incluyendo <span className="font-bold">datos sensibles de salud conforme a los Artículos 2 y 8</span>), con el fin de gestionar mi plan de salud. Mis datos serán protegidos bajo los principios de <span className="font-bold">confidencialidad y seguridad (Artículos 4, 5 y 25)</span> de la <span className="font-bold">Ley 81 de 2019 de Panamá</span>, garantizando mis derechos ARCO.
+          </label>
+        </div>
+
         <div className="flex gap-3 mt-8">
           <button 
             onClick={onClose}
@@ -60,7 +75,7 @@ export const ExamModal = ({ onClose, onSubmit }: ExamModalProps) => {
           </button>
           <button 
             onClick={handleSubmit}
-            disabled={!file || isProcessing}
+            disabled={!file || !termsAccepted || isProcessing}
             className="flex-1 py-3 rounded-xl font-medium bg-zinc-900 text-white hover:bg-zinc-800 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {isProcessing ? (

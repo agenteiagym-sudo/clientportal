@@ -3,7 +3,7 @@ import { supabase } from './lib/supabase';
 import { UserProfile, ProgressData, WeeklyMenu, Appointment, Exam, TrainingLog, StripeInvoice, StripeSubscription, Payment, DailyMenu, SystemSettings, HydrationData } from './types';
 import { 
   LayoutDashboard, Utensils, Calendar, CreditCard, LogOut, User, 
-  ChevronRight, TrendingUp, AlertCircle, Users, Settings
+  ChevronRight, TrendingUp, AlertCircle, Users, Settings, Eye, EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -52,6 +52,17 @@ export default function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
+
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('ara_remembered_email');
+    if (savedEmail) {
+      setEmail(savedEmail);
+      setRememberMe(true);
+    }
+  }, []);
 
   useEffect(() => {
     // Rely exclusively on onAuthStateChange for initial session and changes
@@ -331,8 +342,35 @@ export default function App() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setAuthError(error.message);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      
+      if (rememberMe) {
+        localStorage.setItem('ara_remembered_email', email);
+      } else {
+        localStorage.removeItem('ara_remembered_email');
+      }
+
+      setUser(data.user);
+    } catch (error: any) {
+      setAuthError(error.message);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      toast.success('Se ha enviado un correo para restablecer tu contraseña');
+      setForgotPasswordMode(false);
+    } catch (error: any) {
+      setAuthError(error.message);
+    }
   };
 
   const handleLogout = () => supabase.auth.signOut();
@@ -566,15 +604,65 @@ export default function App() {
   }
 
   if (!user) {
+    if (forgotPasswordMode) {
+      return (
+        <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-4 font-sans">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="w-full max-w-md bg-white rounded-3xl p-8 shadow-xl border border-black/5"
+          >
+            <div className="text-center mb-8">
+              <h1 className="text-2xl font-black text-zinc-900 tracking-tighter uppercase mb-2">Restablecer Contraseña</h1>
+              <p className="text-zinc-500 text-sm">Ingresa tu email y te enviaremos instrucciones para crear una nueva contraseña.</p>
+            </div>
+
+            <form onSubmit={handleForgotPassword} className="space-y-6">
+              <div>
+                <label className="block text-sm font-bold text-zinc-700 mb-2 uppercase tracking-wide">Email</label>
+                <input 
+                  type="email" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-4 py-3 rounded-2xl border border-zinc-200 focus:ring-4 focus:ring-zinc-900/5 focus:border-zinc-900 outline-none transition-all placeholder:text-zinc-300"
+                  placeholder="ejemplo@email.com"
+                  required
+                />
+              </div>
+              {authError && <p className="text-red-500 text-xs font-bold bg-red-50 p-3 rounded-xl border border-red-100">{authError}</p>}
+              <div className="flex flex-col gap-3">
+                <button 
+                  type="submit"
+                  className="w-full bg-zinc-900 text-white font-black py-4 rounded-2xl hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200 uppercase tracking-widest text-xs"
+                >
+                  Enviar Instrucciones
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setForgotPasswordMode(false);
+                    setAuthError('');
+                  }}
+                  className="w-full text-zinc-500 font-bold py-2 text-xs hover:text-zinc-900 transition-all uppercase tracking-widest"
+                >
+                  Volver al Inicio
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      );
+    }
+
     return (
-      <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-4 font-sans">
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="w-full max-w-md bg-white rounded-3xl p-8 shadow-xl border border-black/5"
         >
           <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-zinc-900 rounded-2xl flex items-center justify-center mx-auto mb-6 overflow-hidden">
+            <div className="w-20 h-20 bg-zinc-900 rounded-2xl flex items-center justify-center mx-auto mb-6 overflow-hidden shadow-lg shadow-zinc-200">
               <img src="/logo_gym.jpeg" alt="ARA Clientes Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" onError={(e) => {
                 e.currentTarget.style.display = 'none';
                 e.currentTarget.parentElement?.classList.add('bg-zinc-900');
@@ -583,38 +671,78 @@ export default function App() {
                 e.currentTarget.parentElement?.appendChild(icon);
               }} />
             </div>
-            <h1 className="text-3xl font-black text-zinc-900 tracking-tighter uppercase leading-none">ARA CLIENTES</h1>
-            <p className="text-zinc-500 mt-2 italic font-medium">Elevando tu potencial</p>
-            <p className="text-[10px] text-zinc-400 mt-4 uppercase tracking-widest font-bold">Tu cuenta debe ser creada por un administrador</p>
+            <h1 className="text-3xl font-black text-zinc-900 tracking-tighter uppercase leading-none mb-1">ARA CLIENTES</h1>
+            <p className="text-zinc-400 text-xs uppercase tracking-[0.2em] font-black">Elevando tu potencial</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-1">Email</label>
+              <label className="block text-xs font-black text-zinc-400 uppercase tracking-widest mb-2">Email</label>
               <input 
                 type="email" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
+                className="w-full px-5 py-4 rounded-2xl border border-zinc-100 bg-zinc-50/50 focus:bg-white focus:ring-4 focus:ring-zinc-900/5 focus:border-zinc-900 outline-none transition-all font-medium placeholder:text-zinc-300 shadow-sm"
                 placeholder="tu@email.com"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-1">Contraseña</label>
-              <input 
-                type="password" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-900 focus:border-transparent outline-none transition-all"
-                placeholder="••••••••"
-                required
-              />
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-xs font-black text-zinc-400 uppercase tracking-widest">Contraseña</label>
+                <button 
+                  type="button"
+                  onClick={() => setForgotPasswordMode(true)}
+                  className="text-[10px] font-black text-zinc-400 hover:text-zinc-900 uppercase tracking-widest transition-colors"
+                >
+                  ¿La olvidaste?
+                </button>
+              </div>
+              <div className="relative">
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-5 py-4 rounded-2xl border border-zinc-100 bg-zinc-50/50 focus:bg-white focus:ring-4 focus:ring-zinc-900/5 focus:border-zinc-900 outline-none transition-all font-medium placeholder:text-zinc-300 shadow-sm"
+                  placeholder="••••••••"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-900 transition-colors bg-white/50 backdrop-blur-sm p-1.5 rounded-lg"
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
-            {authError && <p className="text-red-500 text-sm">{authError}</p>}
+
+            <div className="flex items-center gap-2 group">
+              <input
+                type="checkbox"
+                id="rememberMe"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded border-zinc-200 text-zinc-900 focus:ring-zinc-900/5 transition-all cursor-pointer"
+              />
+              <label htmlFor="rememberMe" className="text-[10px] font-black text-zinc-400 uppercase tracking-widest cursor-pointer group-hover:text-zinc-600 transition-colors">
+                Recordar mi email
+              </label>
+            </div>
+
+            {authError && (
+              <motion.p 
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="text-red-500 text-[10px] font-black uppercase tracking-widest bg-red-50 p-4 rounded-2xl border border-red-100"
+              >
+                {authError}
+              </motion.p>
+            )}
+            
             <button 
               type="submit"
-              className="w-full bg-zinc-900 text-white font-semibold py-3 rounded-xl hover:bg-zinc-800 transition-colors shadow-lg shadow-zinc-200"
+              className="w-full bg-zinc-900 text-white font-black py-5 rounded-2xl hover:bg-zinc-800 transition-all shadow-xl shadow-zinc-200 uppercase tracking-[0.2em] text-[10px] active:scale-[0.98]"
             >
               Iniciar Sesión
             </button>

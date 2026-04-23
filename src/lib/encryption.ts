@@ -1,42 +1,60 @@
-import CryptoJS from 'crypto-js';
-
-const ENCRYPTION_KEY = (
-  import.meta.env.VITE_ENCRYPTION_KEY || 
-  import.meta.env.ENCRYPTION_KEY ||
-  (typeof process !== 'undefined' ? process.env.VITE_ENCRYPTION_KEY : null) ||
-  (typeof process !== 'undefined' ? process.env.ENCRYPTION_KEY : null) || 
-  'tu_clave_aqui'
-).trim();
-
-if (ENCRYPTION_KEY === 'tu_clave_aqui' && import.meta.env.PROD) {
-  console.warn('WARNING: Using default ENCRYPTION_KEY in production. This is insecure and might cause decryption errors if the other app uses a different key.');
-}
 
 export async function encryptData(data: any): Promise<string> {
-  const stringData = typeof data === 'string' ? data : JSON.stringify(data);
-  return CryptoJS.AES.encrypt(stringData, ENCRYPTION_KEY).toString();
+  try {
+    const response = await fetch('/api/encrypt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data })
+    });
+    
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      console.warn('Cifrado: Respuesta no JSON del servidor', text.substring(0, 100));
+      return typeof data === 'string' ? data : JSON.stringify(data);
+    }
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Error al cifrar datos');
+    }
+    
+    const result = await response.json();
+    return result.ciphertext;
+  } catch (error) {
+    console.error('Encryption API error:', error);
+    return typeof data === 'string' ? data : JSON.stringify(data);
+  }
 }
 
 export async function decryptData(ciphertext: string): Promise<any> {
   if (!ciphertext || typeof ciphertext !== 'string' || !ciphertext.startsWith('U2FsdGVkX1')) {
     return ciphertext;
   }
-  
+
   try {
-    const bytes = CryptoJS.AES.decrypt(ciphertext, ENCRYPTION_KEY);
-    const decryptedString = bytes.toString(CryptoJS.enc.Utf8);
+    const response = await fetch('/api/decrypt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ciphertext })
+    });
     
-    if (!decryptedString) {
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      console.warn('Descifrado: Respuesta no JSON del servidor', text.substring(0, 100));
       return ciphertext;
     }
-
-    try {
-      return JSON.parse(decryptedString);
-    } catch {
-      return decryptedString;
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Error al descifrar datos');
     }
-  } catch (e) {
-    // If it's a UTF-8 error or any other decryption error, return the original ciphertext
+    
+    const result = await response.json();
+    return result.data;
+  } catch (error) {
+    console.error('Decryption API error:', error);
     return ciphertext;
   }
 }

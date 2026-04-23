@@ -37,6 +37,16 @@ const supabaseAdmin = createClient(
 );
 
 async function startServer() {
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+  const isEncryptionKeyValid = encryptionKey && 
+                               encryptionKey !== 'tu_clave_aqui' && 
+                               encryptionKey !== 'default_secret_key_1234567890';
+  
+  if (!isEncryptionKeyValid) {
+    console.error("CRITICAL WARNING: ENCRYPTION_KEY is missing or insecure. Encryption/Decryption APIs will return errors.");
+    // No exit here to allow the rest of the app (Stripe, etc) to function and to show the UI
+  }
+
   const app = express();
   const PORT = 3000;
 
@@ -194,17 +204,47 @@ async function startServer() {
     }
   });
 
+  const getEncryptionKey = () => {
+    const key = process.env.ENCRYPTION_KEY;
+    if (!key || key === 'tu_clave_aqui' || key === 'default_secret_key_1234567890') {
+      return null;
+    }
+    return key.trim();
+  };
+
+  app.post("/api/encrypt", (req, res) => {
+    try {
+      const { data } = req.body;
+      const key = getEncryptionKey();
+      
+      if (!key) {
+        return res.status(503).json({ error: "Servicio de cifrado no disponible. ENCRYPTION_KEY no está configurada." });
+      }
+
+      const stringData = typeof data === 'string' ? data : JSON.stringify(data);
+      const ciphertext = CryptoJS.AES.encrypt(stringData, key).toString();
+      res.json({ ciphertext });
+    } catch (error: any) {
+      console.error("Error al cifrar:", error.message);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/decrypt", (req, res) => {
     try {
       const { ciphertext } = req.body;
-      const ENCRYPTION_KEY = process.env.VITE_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || "tu_clave_aqui";
+      const key = getEncryptionKey();
+
+      if (!key) {
+        return res.status(503).json({ error: "Servicio de descifrado no disponible. ENCRYPTION_KEY no está configurada." });
+      }
 
       // El formato de CryptoJS suele empezar con U2FsdGVkX1
       if (!ciphertext || typeof ciphertext !== 'string' || !ciphertext.startsWith('U2FsdGVkX1')) {
         return res.json({ data: ciphertext });
       }
 
-      const bytes = CryptoJS.AES.decrypt(ciphertext, ENCRYPTION_KEY);
+      const bytes = CryptoJS.AES.decrypt(ciphertext, key);
       const decryptedStr = bytes.toString(CryptoJS.enc.Utf8);
       
       if (!decryptedStr) {
@@ -217,9 +257,9 @@ async function startServer() {
       } catch {
         res.json({ data: decryptedStr });
       }
-    } catch (error) {
-      console.error("Error al descifrar:", error);
-      res.status(500).json({ error: "Error al descifrar" });
+    } catch (error: any) {
+      console.error("Error al descifrar:", error.message);
+      res.status(500).json({ error: error.message });
     }
   });
 
